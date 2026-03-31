@@ -2,6 +2,9 @@ import { Link } from 'react-router';
 import { Button } from '../components/Button';
 import { motion } from 'motion/react';
 
+// Import your local background image
+import bgImage from '../../assets/eMotion background image.png';
+
 export function Welcome() {
   return (
     <div className="relative h-screen w-full flex flex-col justify-end bg-black text-white overflow-hidden">
@@ -9,7 +12,7 @@ export function Welcome() {
       <div 
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: "url('https://images.unsplash.com/photo-1684114411739-561ece490f02?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb3VudGFpbiUyMGhpa2luZyUyMGFkdmVudHVyZSUyMGZvcmVzdCUyMHRyZWtraW5nfGVufDF8fHx8MTc3MTY3MjY3NXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral')"
+          backgroundImage: `url('${bgImage}')`
         }}
       >
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />

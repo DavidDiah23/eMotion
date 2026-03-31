@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from 'react-router';
-import { supabase } from '../client';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
-import { Loader2, User, Phone, Shield, Camera } from 'lucide-react';
+import { Loader2, User, Phone, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 
 const profileSchema = z.object({
@@ -21,44 +20,22 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 export function ProfileSetup() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) navigate('/login');
-      setUser(user);
-    });
-  }, [navigate]);
-
-  const { register, handleSubmit, formState: { errors }, setValue } = useForm<ProfileFormValues>({
+  const { register, handleSubmit, formState: { errors } } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      fullName: 'Lead Explorer', // Pre-filled for the demo
       privacy: 'public',
     }
   });
 
-  // Pre-fill name if available
-  useEffect(() => {
-    if (user?.user_metadata?.full_name) {
-      setValue('fullName', user.user_metadata.full_name);
-    }
-  }, [user, setValue]);
-
   const onSubmit = async (data: ProfileFormValues) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          full_name: data.fullName,
-          emergency_contact: data.emergencyContact,
-          privacy_settings: data.privacy,
-          profile_setup_complete: true,
-        },
-      });
+      // Simulate network delay for the demo presentation
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
-      if (error) throw error;
-
-      toast.success('Profile updated!');
+      toast.success('Profile updated securely!');
       navigate('/dashboard');
     } catch (error: any) {
       toast.error('Failed to update profile');
@@ -77,9 +54,9 @@ export function ProfileSetup() {
 
         <Card variant="white" className="p-8 shadow-xl border-stone-100">
           <div className="flex justify-center mb-6">
-            <div className="relative w-24 h-24 bg-stone-200 rounded-full flex items-center justify-center border-4 border-white shadow-md">
-              <User className="w-10 h-10 text-stone-400" />
-              <button className="absolute bottom-0 right-0 bg-[#FF4500] p-2 rounded-full text-white shadow-sm hover:bg-[#E03E00]">
+            <div className="relative w-24 h-24 bg-stone-200 rounded-full flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
+              <img src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop" alt="Profile" className="w-full h-full object-cover" />
+              <button onClick={(e) => { e.preventDefault(); toast('Opening camera roll...'); }} className="absolute bottom-0 right-0 bg-[#FF4500] p-2 rounded-full text-white shadow-sm hover:bg-[#E03E00]">
                 <Camera className="w-4 h-4" />
               </button>
             </div>

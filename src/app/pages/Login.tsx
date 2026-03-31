@@ -3,15 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate } from 'react-router';
-import { supabase } from '../client';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Loader2, Mail, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-
-// Initialize Supabase client
-// Imported from ../client.ts
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -30,19 +26,13 @@ export function Login() {
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
-
-      if (error) {
-        throw error;
-      }
+      // Simulate network delay for the demo
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       toast.success('Successfully logged in!');
       navigate('/dashboard');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to login');
+      toast.error('Failed to login');
       console.error('Login error:', error);
     } finally {
       setIsLoading(false);
@@ -50,16 +40,17 @@ export function Login() {
   };
 
   const handleSocialLogin = async (provider: 'google' | 'github') => {
+    setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
-      if (error) throw error;
+      // Simulate network delay for the demo
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      
+      toast.success(`Successfully logged in with ${provider}!`);
+      navigate('/dashboard');
     } catch (error: any) {
       toast.error(`Failed to sign in with ${provider}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -131,6 +122,7 @@ export function Login() {
                 variant="outline"
                 className="w-full"
                 onClick={() => handleSocialLogin('google')}
+                disabled={isLoading}
               >
                 Google
               </Button>
@@ -138,6 +130,7 @@ export function Login() {
                 variant="outline"
                 className="w-full"
                 onClick={() => handleSocialLogin('github')}
+                disabled={isLoading}
               >
                 GitHub
               </Button>

@@ -3,15 +3,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate } from 'react-router';
-import { supabase } from '../client';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Loader2, Mail, Lock, User } from 'lucide-react';
 import { toast } from 'sonner';
-
-// Initialize Supabase client
-// Imported from ../client.ts
 
 const signupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -35,28 +31,14 @@ export function Signup() {
   const onSubmit = async (data: SignupFormValues) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            full_name: data.fullName,
-          },
-        },
-      });
+      // Simulate network delay for the demo
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
-      if (error) {
-        throw error;
-      }
-
-      toast.success('Account created! Please verify your email.');
-      // If email confirmation is disabled or auto-confirmed, we can redirect to profile setup
-      // But typically we ask to verify. 
-      // For this demo/prototype environment, emails might be auto-confirmed or skipped.
-      // I'll assume we can proceed to login or just redirect.
+      toast.success('Account created! Proceeding to your dashboard.');
+      // Bypassing email verification for the demo and going straight to the dashboard or login
       navigate('/login');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create account');
+      toast.error('Failed to create account');
       console.error('Signup error:', error);
     } finally {
       setIsLoading(false);
