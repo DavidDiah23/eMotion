@@ -66,6 +66,8 @@ export function ActiveTrek() {
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number>(0);
 
+  const [motionPermissionGranted, setMotionPermissionGranted] = useState(false);
+
   const logAlert = async (type: string) => {
     toast.error(`⚠️ ${type} Alert Triggered!`);
     try {
@@ -88,13 +90,16 @@ export function ActiveTrek() {
 
   // --- Clock / Pace Timer ---
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    let timer: NodeJS.Timeout;
+    if (isTracking) {
+      timer = setInterval(() => {
+        setTimeElapsed(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+    }
     return () => clearInterval(timer);
-  }, [startTime]);
+  }, [startTime, isTracking]);
 
-  const currentPace = (distanceKm > 0 && timeElapsed > 0) 
+  const currentPace = (distanceKm > 0.01 && timeElapsed > 0) 
     ? (timeElapsed / 60) / distanceKm 
     : 0;
 
@@ -134,35 +139,48 @@ export function ActiveTrek() {
   }, [isTracking]);
 
   // --- Fall Detection (Accelerometer) ---
-  useEffect(() => {
-    let lastTime = Date.now();
-    
-    const handleMotion = (event: DeviceMotionEvent) => {
-      if (!isTracking) return;
-      const acc = event.accelerationIncludingGravity;
-      if (acc && acc.x != null && acc.y != null && acc.z != null) {
-        const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-        setAcceleration(magnitude);
-        
-        if (magnitude > 25 && Date.now() - lastTime > 5000) {
-          lastTime = Date.now();
-          setFallDetected(true);
-          logAlert('Fall Detected');
-          setTimeout(() => setFallDetected(false), 5000);
-        }
-      }
-    };
-
+  const requestMotionPermission = () => {
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
       (DeviceMotionEvent as any).requestPermission()
-        .then((state: string) => { if (state === 'granted') window.addEventListener('devicemotion', handleMotion); })
+        .then((state: string) => { 
+          if (state === 'granted') {
+            setMotionPermissionGranted(true);
+            window.addEventListener('devicemotion', handleMotion); 
+          } else {
+            toast.error("Motion sensors denied.");
+          }
+        })
         .catch(console.error);
     } else {
+      setMotionPermissionGranted(true);
       window.addEventListener('devicemotion', handleMotion);
     }
+  };
 
-    return () => window.removeEventListener('devicemotion', handleMotion);
+  let lastTimeRef = useRef(Date.now());
+  const handleMotion = useCallback((event: DeviceMotionEvent) => {
+    if (!isTracking) return;
+    const acc = event.accelerationIncludingGravity;
+    if (acc && acc.x != null && acc.y != null && acc.z != null) {
+      const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+      setAcceleration(magnitude);
+      
+      // Lowered from 25 to 18 for realistic drops without severe shaking
+      if (magnitude > 18 && Date.now() - lastTimeRef.current > 5000) {
+        lastTimeRef.current = Date.now();
+        setFallDetected(true);
+        logAlert('Fall Detected');
+        setTimeout(() => setFallDetected(false), 5000);
+      }
+    }
   }, [isTracking]);
+
+  useEffect(() => {
+    if (motionPermissionGranted) {
+      window.addEventListener('devicemotion', handleMotion);
+    }
+    return () => window.removeEventListener('devicemotion', handleMotion);
+  }, [isTracking, motionPermissionGranted, handleMotion]);
 
   // --- Heart Rate (PPG) Variance Logic ---
   const processFrame = useCallback(() => {
@@ -190,8 +208,8 @@ export function ActiveTrek() {
       }
       const variance = sqSum / count;
 
-      // Finger detection criteria: High mean red (brightness), Low variance (uniform block of skin)
-      const isSkin = mean > 100 && variance < 1500;
+      // Noticeably broadened thresholds to allow for various camera hardware auto-exposures
+      const isSkin = mean > 55 && variance < 4000;
       setSkinDetected(isSkin);
       
       if (isSkin) {
@@ -379,29 +397,53 @@ export function ActiveTrek() {
                 <TriangleAlert className={`w-5 h-5 ${fallDetected ? 'text-[#FF4500]' : 'text-orange-400'}`} />
                 <span className="font-bold text-stone-700">Fall Detection</span>
               </div>
-              <div className={`text-xs font-bold px-2 py-1 rounded-full ${fallDetected ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                {fallDetected ? 'TRIGGERED' : 'Active'}
-              </div>
+              {motionPermissionGranted && (
+                <div className={`text-xs font-bold px-2 py-1 rounded-full ${fallDetected ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                  {fallDetected ? 'TRIGGERED' : 'Active'}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-2xl font-montserrat font-bold text-stone-800 my-1">
-                {acceleration.toFixed(1)} <span className="text-sm text-stone-500">m/s²</span>
-              </div>
-            </div>
-            <p className="text-xs text-stone-500 mt-1 font-medium">
-              Monitoring via device accelerometer. Jolts {">"} 25 trigger alert.
-            </p>
+            
+            {motionPermissionGranted ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-montserrat font-bold text-stone-800 my-1">
+                    {acceleration.toFixed(1)} <span className="text-sm text-stone-500">m/s²</span>
+                  </div>
+                </div>
+                <p className="text-xs text-stone-500 mt-1 font-medium">
+                  Monitoring via device accelerometer. Jolts {">"} 18 trigger alert.
+                </p>
+              </>
+            ) : (
+               <div className="my-2">
+                 <Button onClick={requestMotionPermission} size="sm" variant="outline" className="w-full text-xs font-bold font-montserrat">
+                   Enable Motion Sensors
+                 </Button>
+               </div>
+            )}
           </Card>
         </div>
 
-        <Button 
-          fullWidth 
-          variant={isTracking ? 'outline' : 'primary'}
-          className={isTracking ? 'border-[#FF4500] text-[#FF4500] hover:bg-orange-50 font-bold mt-auto shrink-0 shadow-lg' : 'font-bold mt-auto shrink-0 shadow-lg'}
-          onClick={() => setIsTracking(!isTracking)}
-        >
-          {isTracking ? 'Pause Tracking' : 'Resume Tracking'}
-        </Button>
+        <div className="grid grid-cols-2 gap-3 mt-auto shrink-0 w-full mb-4">
+          <Button 
+            variant="outline"
+            className="border-stone-200 text-stone-600 hover:bg-stone-50 font-bold shadow-sm"
+            onClick={() => {
+              toast.success('Trek safely saved!');
+              navigate('/dashboard');
+            }}
+          >
+            End & Save
+          </Button>
+          <Button 
+            variant={isTracking ? 'primary' : 'outline'}
+            className={isTracking ? 'bg-amber-500 hover:bg-amber-600 font-bold shadow-md' : 'border-amber-500 text-amber-600 hover:bg-amber-50 font-bold shadow-sm'}
+            onClick={() => setIsTracking(!isTracking)}
+          >
+            {isTracking ? 'Pause Tracking' : 'Resume Tracking'}
+          </Button>
+        </div>
       </div>
     </div>
   );
