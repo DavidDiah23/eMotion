@@ -9,14 +9,12 @@ export function Welcome() {
   return (
     <div className="relative h-screen w-full flex flex-col justify-end bg-black text-white overflow-hidden">
       {/* Background Image */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `url('${bgImage}')`
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-      </div>
+      <img
+        src={bgImage}
+        alt="Background"
+        className="absolute inset-0 w-full h-full object-cover object-bottom"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
 
       <div className="relative z-10 px-8 py-12 flex flex-col gap-8 max-w-md mx-auto w-full">
         <motion.div

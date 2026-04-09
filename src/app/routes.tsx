@@ -5,6 +5,9 @@ import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
 import { ProfileSetup } from "./pages/ProfileSetup";
 import { Dashboard } from "./pages/Dashboard";
+import { ActiveTrek } from "./pages/ActiveTrek";
+import { JoinTrek } from "./pages/JoinTrek";
+import { History } from "./pages/History";
 
 export const router = createBrowserRouter([
   {
@@ -30,5 +33,17 @@ export const router = createBrowserRouter([
   {
     path: "/dashboard",
     Component: Dashboard,
+  },
+  {
+    path: "/active-trek",
+    Component: ActiveTrek,
+  },
+  {
+    path: "/join",
+    Component: JoinTrek,
+  },
+  {
+    path: "/history",
+    Component: History,
   },
 ]);
