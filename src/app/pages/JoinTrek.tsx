@@ -16,12 +16,9 @@ export function JoinTrek() {
   const [pin, setPin] = useState('');
 
   return (
-    <div className="min-h-screen bg-stone-50 font-opensans flex flex-col">
-      <header className="bg-[#2E4F2F] text-white px-4 py-4 flex items-center shadow-md z-50">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition-colors">
-          <ChevronLeft className="w-6 h-6" />
-        </button>
-        <h1 className="font-montserrat font-bold text-lg ml-2">Join a Trek</h1>
+    <div className="min-h-screen bg-stone-50 dark:bg-[#121212] dark:text-[#E0E0E0] font-opensans flex flex-col pb-20">
+      <header className="bg-[#2E4F2F] text-white px-4 py-4 flex items-center justify-center shadow-md z-50">
+        <h1 className="font-montserrat font-bold text-lg">Join a Trek</h1>
       </header>
 
       {/* Decorative Map Background Header */}
@@ -29,7 +26,7 @@ export function JoinTrek() {
         <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=600&auto=format&fit=crop" className="w-full h-full object-cover opacity-50" alt="Map" />
         <div className="absolute inset-0 bg-gradient-to-t from-stone-50 to-transparent" />
         <div className="absolute bottom-4 left-6 right-6 flex justify-center">
-          <div className="bg-white px-4 py-3 rounded-full shadow-lg border border-stone-100 flex items-center gap-3 w-full max-w-sm">
+          <div className="bg-white/90 dark:bg-[#1C1C1E]/90 backdrop-blur-md px-4 py-3 rounded-xl shadow-lg border-2 border-[#2E4F2F] flex items-center gap-3 w-full max-w-sm">
             <Search className="w-5 h-5 text-stone-400" />
             <input 
               type="text" 

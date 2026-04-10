@@ -8,6 +8,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { ActiveTrek } from "./pages/ActiveTrek";
 import { JoinTrek } from "./pages/JoinTrek";
 import { History } from "./pages/History";
+import { AppLayout } from "./components/AppLayout";
 
 export const router = createBrowserRouter([
   {
@@ -31,19 +32,28 @@ export const router = createBrowserRouter([
     Component: ProfileSetup,
   },
   {
-    path: "/dashboard",
-    Component: Dashboard,
-  },
-  {
     path: "/active-trek",
     Component: ActiveTrek,
   },
   {
-    path: "/join",
-    Component: JoinTrek,
-  },
-  {
-    path: "/history",
-    Component: History,
-  },
+    element: <AppLayout />,
+    children: [
+      {
+        path: "/dashboard",
+        Component: Dashboard,
+      },
+      {
+        path: "/profile",
+        Component: ProfileSetup,
+      },
+      {
+        path: "/join",
+        Component: JoinTrek,
+      },
+      {
+        path: "/history",
+        Component: History,
+      }
+    ]
+  }
 ]);

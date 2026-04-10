@@ -1,90 +1,83 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { 
-  Heart, Navigation, TriangleAlert, Settings, Camera, Video, ChevronLeft, Fingerprint, Activity, Clock
-} from 'lucide-react';
+import { Camera, Search, Navigation, Settings, ChevronLeft, MapPin, Loader2, TriangleAlert, UploadCloud } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
-import { toast } from 'sonner';
 import { supabase } from '../client';
-import { AreaChart, Area, Tooltip, ResponsiveContainer, YAxis } from 'recharts';
-import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { offlineQueue } from '../../utils/OfflineQueue';
 
-// Fix for default Leaflet markers in React
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// Mapbox Imports
+import { Map, Source, Layer, Marker } from "react-map-gl/mapbox";
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { gpx } from '@tmcw/togeojson';
+import { X, Map as MapIcon, Radio } from 'lucide-react'; // Added icons for settings
 
-// Calculate distance between two coordinates in km using Haversine
+// --- Math Utilities ---
 function haversineDist(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-}
-
-// Component to auto-follow user position
-function MapCenterer({ position }: { position: [number, number] }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(position);
-  }, [position, map]);
-  return null;
 }
 
 export function ActiveTrek() {
   const navigate = useNavigate();
-  const [isTracking, setIsTracking] = useState(true);
-  
-  // GPS State
-  const [positions, setPositions] = useState<[number, number][]>([]);
-  const [distanceKm, setDistanceKm] = useState(0);
-  const [startTime] = useState(Date.now());
-  const [timeElapsed, setTimeElapsed] = useState(0); // seconds
-  
-  // Accelerometer / Fall Detection State
-  const [acceleration, setAcceleration] = useState(0);
-  const [fallDetected, setFallDetected] = useState(false);
 
-  // Heart Rate (PPG) State
+  // State
+  const [isTracking, setIsTracking] = useState(false);
+  const [distanceKm, setDistanceKm] = useState(0);
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [startTime, setStartTime] = useState(Date.now());
+  const [positions, setPositions] = useState<[number, number][]>([]);
+
+  // Mapbox ViewState
+  const [viewState, setViewState] = useState({
+    longitude: 36.8167,
+    latitude: -1.2333,
+    zoom: 14
+  });
+  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/outdoors-v12");
+
+  // Multiplayer Lobby State
+  const [peers, setPeers] = useState<Record<string, { lat: number, lon: number, name: string }>>({});
+  const [isBroadcasting, setIsBroadcasting] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const channelRef = useRef<any>(null);
+  const localName = localStorage.getItem('eMotion_fullName') || 'Explorer';
+
+  // GPX Data State
+  const [gpxGeojson, setGpxGeojson] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Vitals State
+  const [heartRate, setHeartRate] = useState<number | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [skinDetected, setSkinDetected] = useState(false);
+  const [fallDetected, setFallDetected] = useState(false);
+  const [acceleration, setAcceleration] = useState(0);
+  const [motionPermissionGranted, setMotionPermissionGranted] = useState(false);
+
+  // References
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [heartRate, setHeartRate] = useState(0);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [skinDetected, setSkinDetected] = useState(false);
-  const [hrData, setHrData] = useState<{time: number, value: number}[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number>(0);
-
-  const [motionPermissionGranted, setMotionPermissionGranted] = useState(false);
 
   const logAlert = async (type: string) => {
     toast.error(`⚠️ ${type} Alert Triggered!`);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      
-      const loc = positions.length > 0 ? `${positions[positions.length-1][0]}, ${positions[positions.length-1][1]}` : 'Unknown GPS';
-      
-      await supabase.from('alerts').insert({
-        user_id: user.id,
+      await offlineQueue.safeRpc('notify_emergency', {
+        user_id: (await supabase.auth.getUser()).data.user?.id || 'anonymous',
         type: type,
-        status: 'Triggered',
-        location: loc,
-        timestamp: new Date().toISOString()
+        location: `${positions.length > 0 ? positions[positions.length - 1].join(', ') : 'Unknown'}`
       });
     } catch (e) {
-      console.error("Failed to log alert to Supabase", e);
+      console.error(e);
     }
   };
 
@@ -99,11 +92,11 @@ export function ActiveTrek() {
     return () => clearInterval(timer);
   }, [startTime, isTracking]);
 
-  const currentPace = (distanceKm > 0.01 && timeElapsed > 0) 
-    ? (timeElapsed / 60) / distanceKm 
+  const currentPace = (distanceKm > 0.01 && timeElapsed > 0)
+    ? (timeElapsed / 60) / distanceKm
     : 0;
 
-  const currentPosition = positions.length > 0 ? positions[positions.length - 1] : [0, 0] as [number, number];
+  const currentPosition = positions.length > 0 ? positions[positions.length - 1] : [viewState.latitude, viewState.longitude] as [number, number];
 
   // --- GPS Geolocation Tracking ---
   useEffect(() => {
@@ -113,6 +106,7 @@ export function ActiveTrek() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
+        setViewState((prev) => ({ ...prev, latitude, longitude }));
         setPositions((prev) => {
           const newPos: [number, number] = [latitude, longitude];
           if (prev.length > 0) {
@@ -127,7 +121,7 @@ export function ActiveTrek() {
       (error) => {
         console.warn("GPS High Accuracy Error, trying fallback:", error);
         toast.warning("Weak GPS signal. Using estimated location.");
-        // Fallback to a mock location (e.g. Karura Forest geometry) so the app isn't stuck
+        // Fallback to a mock location (e.g. Karura Forest geometry)
         if (positions.length === 0) {
           setPositions([[-1.2333, 36.8167]]);
         }
@@ -138,14 +132,71 @@ export function ActiveTrek() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [isTracking]);
 
+  // --- Realtime Lobby (Supabase Presence) ---
+  useEffect(() => {
+    if (!isTracking) {
+       if (channelRef.current) {
+         supabase.removeChannel(channelRef.current);
+         channelRef.current = null;
+         setPeers({});
+       }
+       return;
+    }
+
+    const room = supabase.channel('trek-lobby', {
+      config: { presence: { key: (supabase.auth as any).user?.id || Math.random().toString() } }
+    });
+    channelRef.current = room;
+
+    room
+      .on('presence', { event: 'sync' }, () => {
+        const state = room.presenceState();
+        const newPeers: Record<string, { lat: number, lon: number, name: string }> = {};
+        for (const id in state) {
+          const presenceData = state[id][0] as any;
+          if (presenceData && presenceData.name !== localName) { // Exclude self roughly
+            newPeers[id] = presenceData;
+          }
+        }
+        setPeers(newPeers);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && isBroadcasting) {
+          await room.track({
+            name: localName,
+            lat: currentPosition[0],
+            lon: currentPosition[1]
+          });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(room);
+      channelRef.current = null;
+    };
+  }, [isTracking]);
+
+  // Update presence when position changes
+  useEffect(() => {
+    if (isBroadcasting && channelRef.current && isTracking) {
+      channelRef.current.track({
+        name: localName,
+        lat: currentPosition[0],
+        lon: currentPosition[1]
+      });
+    } else if (!isBroadcasting && channelRef.current) {
+      channelRef.current.untrack();
+    }
+  }, [currentPosition, isBroadcasting, isTracking, localName]);
+
   // --- Fall Detection (Accelerometer) ---
   const requestMotionPermission = () => {
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
       (DeviceMotionEvent as any).requestPermission()
-        .then((state: string) => { 
+        .then((state: string) => {
           if (state === 'granted') {
             setMotionPermissionGranted(true);
-            window.addEventListener('devicemotion', handleMotion); 
+            window.addEventListener('devicemotion', handleMotion);
           } else {
             toast.error("Motion sensors denied.");
           }
@@ -164,8 +215,7 @@ export function ActiveTrek() {
     if (acc && acc.x != null && acc.y != null && acc.z != null) {
       const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
       setAcceleration(magnitude);
-      
-      // Lowered from 25 to 18 for realistic drops without severe shaking
+
       if (magnitude > 18 && Date.now() - lastTimeRef.current > 5000) {
         lastTimeRef.current = Date.now();
         setFallDetected(true);
@@ -184,218 +234,382 @@ export function ActiveTrek() {
 
   // --- Heart Rate (PPG) Variance Logic ---
   const processFrame = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !isCameraActive) return;
-    
-    const context = canvasRef.current.getContext('2d');
-    if (context) {
-      context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-      const frameData = context.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
-      const data = frameData.data;
-      
-      let sum = 0;
+    if (!videoRef.current || !canvasRef.current || !isDetecting) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = frame.data;
+      let rSum = 0;
       let count = 0;
-      
-      // Subsample pixels for performance (every 4th pixel)
-      for (let i = 0; i < data.length; i += 16) {
-        sum += data[i]; // Red channel
-        count++;
+
+      // Only check the center block of pixels to ensure finger coverage
+      const w = canvas.width;
+      const h = canvas.height;
+
+      for (let y = h / 3; y < 2 * h / 3; y += 4) {
+        for (let x = w / 3; x < 2 * w / 3; x += 4) {
+          const i = (y * w + x) * 4;
+          rSum += data[i];
+          count++;
+        }
       }
-      
-      const mean = sum / count;
+
+      const mean = rSum / count;
+
+      // Variance check
       let sqSum = 0;
-      for (let i = 0; i < data.length; i += 16) {
-        sqSum += (data[i] - mean) * (data[i] - mean);
+      for (let y = h / 3; y < 2 * h / 3; y += 4) {
+        for (let x = w / 3; x < 2 * w / 3; x += 4) {
+          const i = (y * w + x) * 4;
+          sqSum += Math.pow(data[i] - mean, 2);
+        }
       }
       const variance = sqSum / count;
 
-      // Noticeably broadened thresholds to allow for various camera hardware auto-exposures
       const isSkin = mean > 55 && variance < 4000;
       setSkinDetected(isSkin);
-      
-      if (isSkin) {
-        const time = Date.now();
-        setHrData(prev => {
-          const newData = [...prev, { time, value: mean }];
-          if (newData.length > 50) newData.shift();
-          return newData;
-        });
 
-        if (Math.random() > 0.95) {
-          setHeartRate(prev => prev === 0 ? 75 : Math.floor(Math.max(50, Math.min(180, prev + (Math.random() > 0.5 ? 1 : -1) * 2))));
-        }
+      if (isSkin) {
+        // Base simplistic mock pulse logic triggered by real skin verification
+        const mockPulse = 110 + Math.sin(Date.now() / 200) * 10;
+        setHeartRate(Math.round(mockPulse));
       } else {
-        setHrData([]);
-        setHeartRate(0);
+        setHeartRate(null);
       }
     }
-    
-    animationFrameRef.current = requestAnimationFrame(processFrame);
-  }, [isCameraActive]);
+
+    if (isDetecting) {
+      animationFrameRef.current = requestAnimationFrame(processFrame);
+    }
+  }, [isDetecting]);
 
   const toggleCamera = async () => {
-    if (isCameraActive) {
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-      setIsCameraActive(false);
+    if (isDetecting) {
+      setIsDetecting(false);
+      setHeartRate(null);
       setSkinDetected(false);
       cancelAnimationFrame(animationFrameRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     } else {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        
-        const track = stream.getVideoTracks()[0];
-        const capabilities = track.getCapabilities() as any;
-        if (capabilities.torch) {
-          await track.applyConstraints({ advanced: [{ torch: true }] as any });
-        }
-
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', advanced: [{ torch: true } as any] }
+        });
         streamRef.current = stream;
-        setIsCameraActive(true);
-        
-        setTimeout(() => { processFrame(); }, 1000);
-      } catch (err) {
-        console.error("Camera access failed", err);
-        if (!navigator.mediaDevices) toast.error("HTTPS is required on mobile browsers to access sensors.");
-        else toast.error("Unable to access camera or flashlight for HR monitoring.");
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+        setIsDetecting(true);
+        requestAnimationFrame(processFrame);
+        toast.info("Place your finger covering the camera lens and flash");
+      } catch (err: any) {
+        console.error("Camera error:", err);
+        toast.error("Could not access camera for HR.");
       }
     }
   };
 
+  // Cleanup Camera
   useEffect(() => {
     return () => {
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
       cancelAnimationFrame(animationFrameRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
     };
   }, []);
 
+  // --- GPX Parser ---
+  const handleGpxUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const xmlString = e.target?.result as string;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlString, "text/xml");
+
+        // Ensure no parsing errors
+        const parseError = doc.querySelector("parsererror");
+        if (parseError) {
+          toast.error("Invalid GPX XML format.");
+          return;
+        }
+
+        const geojson = gpx(doc);
+        setGpxGeojson(geojson);
+
+        // Center map to start of GPX if coordinates exist
+        if (geojson.features && geojson.features.length > 0) {
+          const coords = geojson.features[0].geometry.coordinates;
+          if (coords && coords.length > 0) {
+            setViewState((prev) => ({
+              ...prev,
+              longitude: coords[0][0],
+              latitude: coords[0][1],
+              zoom: 13
+            }));
+          }
+        }
+        toast.success("Route imported successfully!");
+
+      } catch (error) {
+        console.error("Failed to parse GPX:", error);
+        toast.error("Failed to read GPX file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Convert our tracking array into a GeoJSON LineString
+  const trackingGeojson = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: positions.map(p => [p[1], p[0]]) // Mapbox expects [lon, lat]
+        }
+      }
+    ]
+  };
+
   return (
-    <div className="h-screen bg-stone-50 font-opensans flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="bg-[#2E4F2F] text-white px-4 py-4 flex items-center justify-between shadow-md z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-white/10 transition-colors">
+    <div className="h-screen flex flex-col bg-stone-900 font-opensans relative">
+
+      {/* Mapbox Container Layer */}
+      <div className="absolute inset-0 z-0 h-[50vh]">
+        <Map
+          {...viewState}
+          onMove={evt => setViewState(evt.viewState)}
+          mapStyle={mapStyle}
+          mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        >
+          {/* Imported GPX Route */}
+          {gpxGeojson && (
+            <Source id="gpx-data" type="geojson" data={gpxGeojson}>
+              <Layer
+                id="gpx-layer"
+                type="line"
+                paint={{ 'line-color': '#A8A29E', 'line-width': 4, 'line-dasharray': [2, 2] }}
+              />
+            </Source>
+          )}
+
+          {/* Active Live Tracking GeoJSON */}
+          {positions.length > 0 && (
+            <Source id="live-track" type="geojson" data={trackingGeojson as any}>
+              <Layer
+                id="live-track-layer"
+                type="line"
+                paint={{ 'line-color': '#FF4500', 'line-width': 6 }}
+              />
+            </Source>
+          )}
+
+          {/* Local User Marker */}
+          <Marker longitude={currentPosition[1]} latitude={currentPosition[0]} color="#FF4500" />
+          
+          {/* Peer Markers for Multiplayer Sync */}
+          {Object.values(peers).map((peer, i) => (
+             <Marker key={i} longitude={peer.lon} latitude={peer.lat}>
+               <div className="flex flex-col items-center">
+                 <div className="bg-amber-400 w-4 h-4 rounded-full border-2 border-white shadow-md animate-bounce" />
+                 <span className="text-[10px] font-bold mt-1 text-white bg-black/50 px-1.5 py-0.5 rounded backdrop-blur-sm shadow-sm">{peer.name}</span>
+               </div>
+             </Marker>
+          ))}
+        </Map>
+
+        {/* GPX Upload Overlay Button */}
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
+          <input
+            type="file"
+            accept=".gpx"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleGpxUpload}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-xl border-2 border-stone-100 hover:border-[#FF4500] transition-colors"
+          >
+            <UploadCloud className="w-5 h-5 text-stone-700" />
+          </button>
+        </div>
+      </div>
+
+      {/* Floating Header */}
+      <header className="absolute top-0 w-full z-10 bg-transparent bg-gradient-to-b from-black/80 to-transparent text-white px-4 py-8 flex items-center justify-between pointer-events-auto">
+        <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors">
           <ChevronLeft className="w-6 h-6" />
         </button>
         <div className="flex flex-col items-center">
           <span className="text-xs uppercase tracking-wider font-bold text-[#FF4500] animate-pulse">Live Trek</span>
-          <h1 className="font-montserrat font-bold text-lg">Karura Forest</h1>
+          <h1 className="font-montserrat font-bold text-lg drop-shadow-md">Karura Forest</h1>
         </div>
-        <button 
-          onClick={() => toast('Settings panel coming soon!')}
-          className="p-2 -mr-2 rounded-full hover:bg-white/10 transition-colors"
+        <button
+          onClick={() => setShowSettings(true)}
+          className="p-2 -mr-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors"
         >
           <Settings className="w-6 h-6" />
         </button>
       </header>
 
-      {/* Main Map View */}
-      <div className="relative flex-1 bg-stone-300 z-0">
-        {positions.length > 0 ? (
-          <MapContainer 
-            center={currentPosition} 
-            zoom={16} 
-            style={{ width: '100%', height: '100%' }}
-            zoomControl={false}
-          >
-            {/* Strava/AllTrails style topo map via OpenTopoMap */}
-            <TileLayer
-              url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-            />
-            <MapCenterer position={currentPosition} />
-            <Polyline positions={positions} color="#FF4500" weight={5} opacity={0.8} />
-            <Marker position={currentPosition} />
-          </MapContainer>
-        ) : (
-          <div className="flex items-center justify-center h-full flex-col text-stone-500 gap-4">
-            <Navigation className="w-10 h-10 animate-bounce text-[#FF4500]" />
-            <span className="font-bold">Locating GPS signal...</span>
-          </div>
-        )}
+      {/* Settings Drawer Overlay */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowSettings(false)} />
+          <div className="relative bg-white dark:bg-[#1C1C1E] rounded-t-3xl p-6 shadow-2xl animate-in slide-in-from-bottom flex flex-col gap-6">
+            <div className="flex justify-between items-center text-stone-900 dark:text-white">
+              <h2 className="font-montserrat font-bold text-xl">Trek Settings</h2>
+              <button onClick={() => setShowSettings(false)} className="p-2 rounded-full bg-stone-100 dark:bg-stone-800"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-stone-200 dark:border-stone-800">
+                <div className="flex items-center gap-3 text-stone-800 dark:text-stone-200">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg"><Radio className="w-5 h-5 text-blue-600 dark:text-blue-400" /></div>
+                  <div>
+                    <div className="font-bold">Broadcast Location</div>
+                    <div className="text-xs text-stone-500">Share live tracking with group</div>
+                  </div>
+                </div>
+                <Button 
+                   size="sm" 
+                   variant={isBroadcasting ? 'primary' : 'outline'} 
+                   onClick={() => setIsBroadcasting(!isBroadcasting)}
+                >
+                  {isBroadcasting ? 'Live' : 'Hidden'}
+                </Button>
+              </div>
 
-        {/* Floating Telemetry Panel */}
-        <div className="absolute top-4 left-4 right-4 grid grid-cols-2 gap-4 z-[400] pointer-events-none">
-          <Card className="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-xl border-l-4 border-l-[#FF4500]">
-            <div className="text-xs font-bold text-stone-500 uppercase flex items-center gap-1 mb-1">
-              <Navigation className="w-3 h-3" /> Distance
+              <div className="flex items-center justify-between p-4 rounded-xl border border-stone-200 dark:border-stone-800">
+                <div className="flex items-center gap-3 text-stone-800 dark:text-stone-200">
+                  <div className="p-2 bg-green-100 dark:bg-green-900/50 rounded-lg"><MapIcon className="w-5 h-5 text-green-600 dark:text-green-400" /></div>
+                  <div>
+                    <div className="font-bold">Satellite Map</div>
+                    <div className="text-xs text-stone-500">Toggle realistic terrain imagery</div>
+                  </div>
+                </div>
+                <Button 
+                   size="sm" 
+                   variant={mapStyle.includes('satellite') ? 'primary' : 'outline'} 
+                   onClick={() => setMapStyle(mapStyle.includes('satellite') ? "mapbox://styles/mapbox/outdoors-v12" : "mapbox://styles/mapbox/satellite-v9")}
+                >
+                  {mapStyle.includes('satellite') ? 'On' : 'Off'}
+                </Button>
+              </div>
             </div>
-            <div className="text-2xl font-montserrat font-bold text-stone-800">
-              {distanceKm.toFixed(2)} <span className="text-sm font-medium">km</span>
+          </div>
+        </div>
+      )}
+
+      {/* Telemetry Dashboard Component */}
+      <div className="absolute inset-x-0 bottom-0 top-[40vh] bg-stone-100 dark:bg-[#121212] z-20 rounded-t-[32px] shadow-[0_-8px_30px_rgba(0,0,0,0.12)] flex flex-col pt-6 pb-8 px-4 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+
+        {/* Drag handle visual */}
+        <div className="w-12 h-1.5 bg-stone-300 dark:bg-stone-700 rounded-full mx-auto mb-6 absolute top-3 left-1/2 -translate-x-1/2"></div>
+
+        {/* Primary Stats Grid */}
+        <div className="grid grid-cols-2 gap-4 mb-6 relative">
+          <Card className="absolute -top-16 left-0 right-0 p-4 border-2 border-stone-200 dark:border-stone-800 shadow-xl bg-white/90 dark:bg-stone-900/90 backdrop-blur-md rounded-2xl flex divide-x divide-stone-200 dark:divide-stone-800 z-30">
+            <div className="flex-1 px-2">
+              <div className="text-[10px] uppercase font-bold text-stone-500 dark:text-stone-400 flex items-center gap-1 mb-1">
+                <Navigation className="w-3 h-3" /> Distance
+              </div>
+              <div className="font-montserrat font-bold text-3xl text-stone-900 dark:text-white">
+                {distanceKm.toFixed(2)} <span className="text-sm">km</span>
+              </div>
             </div>
-          </Card>
-          <Card className="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-xl border-l-4 border-l-[#2E4F2F]">
-            <div className="text-xs font-bold text-stone-500 uppercase flex items-center gap-1 mb-1">
-              <Clock className="w-3 h-3" /> Pace
-            </div>
-            <div className="text-xl font-montserrat font-bold text-stone-800 tracking-tight">
-              {currentPace > 0 ? `${currentPace.toFixed(1)} /km` : '0.0 /km'}
+            <div className="flex-1 px-4">
+              <div className="text-[10px] uppercase font-bold text-stone-500 dark:text-stone-400 flex items-center gap-1 mb-1">
+                <Camera className="w-3 h-3" /> Pace
+              </div>
+              <div className="font-montserrat font-bold text-3xl text-stone-900 dark:text-white">
+                {currentPace.toFixed(1)} <span className="text-sm text-stone-500">/km</span>
+              </div>
             </div>
           </Card>
         </div>
-      </div>
 
-      {/* Sensor Dashboard (Bottom Panel) */}
-      <div className="bg-white rounded-t-3xl -mt-6 z-[500] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] px-6 pt-6 pb-8 shrink-0 flex flex-col">
-        <div className="w-12 h-1 bg-stone-200 rounded-full mx-auto mb-4" />
-        
-        <h3 className="font-montserrat font-bold text-[#2E4F2F] text-lg mb-4">Vitals & Safety</h3>
-        
-        <div className="grid grid-cols-1 gap-4 mb-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 400px)' }}>
-          
-          {/* Heart Rate Sensor Panel */}
-          <Card variant="stone" className={`p-4 transition-all ${isCameraActive && skinDetected ? 'ring-2 ring-red-500 bg-red-50/50' : ''}`}>
-            <div className="flex justify-between items-start mb-2">
+        <h3 className="font-montserrat font-bold text-lg text-stone-900 dark:text-white mt-12 mb-4">Vitals & Safety</h3>
+
+        <div className="space-y-3 flex-1 flex flex-col">
+          {/* Heart Rate / Camera Feed Container */}
+          <Card className="p-1 sm:p-4 border border-stone-200 flex flex-col bg-white">
+            <div className="flex justify-between items-center px-3 pt-3 sm:px-0 sm:pt-0 mb-3">
               <div className="flex items-center gap-2">
-                <Heart className={`w-5 h-5 ${isCameraActive && skinDetected ? 'text-red-500 animate-pulse' : 'text-stone-400'}`} />
-                <span className="font-bold text-stone-700">Heart Rate (PPG)</span>
+                <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center">
+                  <Camera className="w-4 h-4 text-red-500" />
+                </div>
+                <span className="font-bold text-stone-800">Heart Rate (PPG)</span>
               </div>
-              <button 
+              <button
                 onClick={toggleCamera}
-                className={`p-2 rounded-full ${isCameraActive ? 'bg-red-100 text-red-600' : 'bg-stone-200 text-stone-600'} hover:scale-105 transition-all outline-none`}
+                className={`p-2 rounded-full transition-colors ${isDetecting ? 'bg-red-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}
               >
-                {isCameraActive ? <Video className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
+                <Camera className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="flex items-end gap-3 mt-2 h-10">
-              {isCameraActive ? (
-                skinDetected ? (
-                  <>
-                    <div className="text-4xl font-montserrat font-bold text-stone-800">{heartRate || '--'}</div>
-                    <div className="text-sm font-bold text-stone-400 mb-1 uppercase tracking-wider">bpm</div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-2 text-stone-500 animate-pulse font-medium text-sm">
-                    <Fingerprint className="w-5 h-5" />
-                    Place finger tightly on back camera flash to measure...
-                  </div>
-                )
-              ) : (
-                <div className="text-4xl font-montserrat font-bold text-stone-300">--</div>
+
+            <div className={`relative w-full h-32 sm:h-40 rounded-xl overflow-hidden flex items-center justify-center transition-colors ${isDetecting ? 'bg-black' : 'bg-stone-50'}`}>
+              <video
+                ref={videoRef}
+                className="absolute inset-0 w-full h-full object-cover opacity-50"
+                playsInline
+                muted
+              />
+              <canvas ref={canvasRef} className="hidden" />
+
+              {!isDetecting && (
+                <div className="text-stone-400 font-bold tracking-widest text-2xl font-montserrat opacity-50">
+                  --
+                </div>
+              )}
+
+              {isDetecting && !skinDetected && (
+                <div className="relative z-10 flex flex-col items-center justify-center animate-pulse">
+                  <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
+                  <span className="text-white font-bold text-sm bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">Awaiting Finger...</span>
+                </div>
+              )}
+
+              {isDetecting && skinDetected && heartRate && (
+                <div className="relative z-10 flex flex-col items-center">
+                  <span className="text-red-500 text-6xl font-montserrat font-bold drop-shadow-[0_0_15px_rgba(239,68,68,0.5)] tracking-tighter">
+                    {heartRate}
+                  </span>
+                  <span className="text-white/80 font-bold text-xs uppercase tracking-widest mt-1">BPM</span>
+                </div>
               )}
             </div>
-
-            {/* Hidden Video/Canvas for Background Processing */}
-            <video ref={videoRef} className="hidden" autoPlay playsInline />
-            <canvas ref={canvasRef} width="50" height="50" className="hidden" />
-
-            {/* Signal Graph */}
-            {isCameraActive && skinDetected && hrData.length > 0 && (
-              <div className="h-12 w-full mt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={hrData}>
-                    <Area type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={2} fillOpacity={0} isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </Card>
 
           {/* Accelerometer / Fall Detection Panel */}
-          <Card variant="white" className={`p-4 border border-stone-100 ${fallDetected ? 'bg-red-50 ring-2 ring-[#FF4500] animate-pulse' : ''}`}>
+          <Card className={`p-4 border ${fallDetected ? 'border-[#FF4500] bg-red-50 ring-2 ring-[#FF4500] animate-pulse' : 'border-stone-200 bg-white'}`}>
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center gap-2">
                 <TriangleAlert className={`w-5 h-5 ${fallDetected ? 'text-[#FF4500]' : 'text-orange-400'}`} />
-                <span className="font-bold text-stone-700">Fall Detection</span>
+                <span className="font-bold text-stone-800">Fall Detection</span>
               </div>
               {motionPermissionGranted && (
                 <div className={`text-xs font-bold px-2 py-1 rounded-full ${fallDetected ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
@@ -403,7 +617,7 @@ export function ActiveTrek() {
                 </div>
               )}
             </div>
-            
+
             {motionPermissionGranted ? (
               <>
                 <div className="flex items-center gap-3">
@@ -416,17 +630,17 @@ export function ActiveTrek() {
                 </p>
               </>
             ) : (
-               <div className="my-2">
-                 <Button onClick={requestMotionPermission} size="sm" variant="outline" className="w-full text-xs font-bold font-montserrat">
-                   Enable Motion Sensors
-                 </Button>
-               </div>
+              <div className="my-2">
+                <Button onClick={requestMotionPermission} size="sm" variant="outline" className="w-full text-xs font-bold font-montserrat border-stone-200 hover:bg-stone-50 text-stone-700">
+                  Enable Motion Sensors
+                </Button>
+              </div>
             )}
           </Card>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-auto shrink-0 w-full mb-4">
-          <Button 
+          <Button
             variant="outline"
             className="border-stone-200 text-stone-600 hover:bg-stone-50 font-bold shadow-sm"
             onClick={() => {
@@ -436,9 +650,9 @@ export function ActiveTrek() {
           >
             End & Save
           </Button>
-          <Button 
+          <Button
             variant={isTracking ? 'primary' : 'outline'}
-            className={isTracking ? 'bg-amber-500 hover:bg-amber-600 font-bold shadow-md' : 'border-amber-500 text-amber-600 hover:bg-amber-50 font-bold shadow-sm'}
+            className={isTracking ? 'bg-amber-500 hover:bg-amber-600 border-transparent text-white font-bold shadow-md' : 'border-amber-500 text-amber-600 hover:bg-amber-50 font-bold shadow-sm'}
             onClick={() => setIsTracking(!isTracking)}
           >
             {isTracking ? 'Pause Tracking' : 'Resume Tracking'}

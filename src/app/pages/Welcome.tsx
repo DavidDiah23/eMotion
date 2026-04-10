@@ -12,7 +12,7 @@ export function Welcome() {
       <img
         src={bgImage}
         alt="Background"
-        className="absolute inset-0 w-full h-full object-cover object-bottom"
+        className="absolute inset-0 w-full h-full object-cover object-center"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
 

@@ -98,14 +98,14 @@ export function ProfileSetup() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-stone-50">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-stone-50 dark:bg-[#121212]">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold font-montserrat text-[#2E4F2F]">Complete Your Profile</h1>
-          <p className="mt-2 text-stone-600 font-opensans">Tell us a bit more about you</p>
+          <h1 className="text-3xl font-bold font-montserrat text-[#2E4F2F] dark:text-white">Complete Your Profile</h1>
+          <p className="mt-2 text-stone-600 dark:text-stone-400 font-opensans">Tell us a bit more about you</p>
         </div>
 
-        <Card variant="white" className="p-8 shadow-xl border-stone-100">
+        <Card variant="white" className="p-8 shadow-xl border-stone-100 dark:border-stone-800 dark:bg-[#1C1C1E]">
           <div className="flex justify-center mb-6">
             <div className="relative w-24 h-24 bg-stone-200 rounded-full flex items-center justify-center border-4 border-white shadow-md overflow-hidden group">
               {isUploading ? (
@@ -157,7 +157,7 @@ export function ProfileSetup() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#2E4F2F] font-montserrat mb-2">
+                <label className="block text-sm font-semibold text-[#2E4F2F] dark:text-stone-300 font-montserrat mb-2">
                   Privacy Settings
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -172,7 +172,7 @@ export function ProfileSetup() {
                         className="peer sr-only"
                         {...register('privacy')}
                       />
-                      <div className="flex flex-col items-center justify-center p-3 rounded-lg border-2 border-stone-200 bg-stone-50 peer-checked:border-[#2E4F2F] peer-checked:bg-[#2E4F2F]/10 transition-all text-sm capitalize font-medium text-stone-600 peer-checked:text-[#2E4F2F]">
+                      <div className="flex flex-col items-center justify-center p-3 rounded-lg border-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 peer-checked:border-[#2E4F2F] peer-checked:dark:border-[#FF4500] peer-checked:bg-[#2E4F2F]/10 peer-checked:dark:bg-[#FF4500]/10 transition-all text-sm capitalize font-medium text-stone-600 dark:text-stone-400 peer-checked:text-[#2E4F2F] peer-checked:dark:text-[#FF4500]">
                         {type}
                       </div>
                     </label>
