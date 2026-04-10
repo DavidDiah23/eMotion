@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
-        runtimeCaching: [
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],        globIgnores: ['**/eMotion background image.png'],
+        maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,        runtimeCaching: [
           {
             urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
             handler: 'CacheFirst',
