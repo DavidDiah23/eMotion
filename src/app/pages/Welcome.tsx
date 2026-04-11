@@ -3,7 +3,7 @@ import { Button } from '../components/Button';
 import { motion } from 'motion/react';
 
 // Import your local background image
-import bgImage from '../../assets/eMotion background image.png';
+import bgImage from '../../assets/emotion-background.png';
 
 export function Welcome() {
   return (
