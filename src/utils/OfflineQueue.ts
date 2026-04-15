@@ -52,6 +52,9 @@ class OfflineQueueManager {
       try {
         if (item.endpoint === 'notify_emergency') {
           await supabase.rpc('notify_emergency', item.payload);
+        } else if (item.endpoint.startsWith('insert_')) {
+          const table = item.endpoint.replace('insert_', '');
+          await supabase.from(table).insert(item.payload);
         }
         // Could add more endpoints here
       } catch (err) {
@@ -81,6 +84,24 @@ class OfflineQueueManager {
       }
     } else {
       this.enqueue(endpoint, payload);
+      return false;
+    }
+  }
+
+  // Wrapper for Supabase Inserts designed for offline capabilities
+  async safeInsert(table: string, payload: any) {
+    if (navigator.onLine) {
+      try {
+        const { error } = await supabase.from(table).insert(payload);
+        if (error) throw error;
+        return true;
+      } catch (error) {
+         console.warn(`Insert to ${table} failed online, queueing...`, error);
+         this.enqueue(`insert_${table}`, payload);
+         return false;
+      }
+    } else {
+      this.enqueue(`insert_${table}`, payload);
       return false;
     }
   }

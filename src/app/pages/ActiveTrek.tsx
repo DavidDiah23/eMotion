@@ -71,11 +71,17 @@ export function ActiveTrek() {
   const logAlert = async (type: string) => {
     toast.error(`⚠️ ${type} Alert Triggered!`);
     try {
-      await offlineQueue.safeRpc('notify_emergency', {
-        user_id: (await supabase.auth.getUser()).data.user?.id || 'anonymous',
-        type: type,
-        location: `${positions.length > 0 ? positions[positions.length - 1].join(', ') : 'Unknown'}`
-      });
+      const userRes = await supabase.auth.getUser();
+      const userId = userRes.data.user?.id;
+      
+      const payload: any = {
+        alert_type: type
+      };
+      if (userId) {
+        payload.user_id = userId;
+      }
+
+      await offlineQueue.safeInsert('alerts', payload);
     } catch (e) {
       console.error(e);
     }
