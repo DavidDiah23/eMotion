@@ -5,6 +5,7 @@ import { Search, MessageSquare, Bell, Moon, Sun, Flame, MoreHorizontal, MapPin, 
 import { useInView } from 'react-intersection-observer';
 import { toast } from 'sonner';
 import { Button } from '../components/Button';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 // Mock post generator
 const generatePost = (id: number) => ({
@@ -26,6 +27,42 @@ export function Dashboard() {
   const [posts, setPosts] = useState(() => Array.from({ length: 3 }, (_, i) => generatePost(i + 1)));
 
   const { ref, inView } = useInView({ rootMargin: '200px' });
+
+  // Hook up realtime integration
+  useRealtimeSync({
+    onAlertInserted: (alert) => {
+      setPosts((current) => [
+        {
+          id: current.length > 0 ? Math.max(...current.map(p => p.id)) + 1 : 1,
+          title: `🚨 EMERGENCY: ${alert.alert_type}`,
+          description: `A user has triggered a system ${alert.alert_type} alert on the trail. Emergency contacts have been notified.`,
+          distance: '0.0',
+          elevGain: 0,
+          time: 'Just now',
+          achievements: 0,
+          image: 'https://images.unsplash.com/photo-1628103004386-319ce925eac?q=80&w=600&auto=format&fit=crop', // Emergency aesthetic
+          isPr: false
+        },
+        ...current
+      ]);
+    },
+    onTrekInserted: (trek) => {
+      setPosts((current) => [
+        {
+          id: current.length > 0 ? Math.max(...current.map(p => p.id)) + 1 : 1,
+          title: `🌿 Live Trek Started`,
+          description: `A new member just joined the network and began scanning the trail. Safe travels!`,
+          distance: '0.0',
+          elevGain: 0,
+          time: 'Just now',
+          achievements: 0,
+          image: 'https://images.unsplash.com/photo-1551632811-561732d1e306?q=80&w=600&auto=format&fit=crop',
+          isPr: false
+        },
+        ...current
+      ]);
+    }
+  });
 
   useEffect(() => setMounted(true), []);
 

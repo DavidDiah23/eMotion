@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 import { Card } from '../components/Card';
 import { ChevronLeft, MapPin, Clock, Heart, Award, TriangleAlert, ChartBar } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
@@ -36,6 +37,46 @@ const mockHistory = [
 export function History() {
   const navigate = useNavigate();
 
+  const [metrics, setMetrics] = useState({
+    treks: 42,
+    distance: 312,
+    alerts: 4
+  });
+
+  const [historyList, setHistoryList] = useState(mockHistory);
+
+  useRealtimeSync({
+    onAlertInserted: (alert) => {
+      setMetrics(prev => ({ ...prev, alerts: prev.alerts + 1 }));
+      setHistoryList(current => {
+         const updated = [...current];
+         if (updated.length > 0) {
+            updated[0] = { ...updated[0], alerts: updated[0].alerts + 1 };
+         }
+         return updated;
+      });
+    },
+    onTrekInserted: (trek) => {
+      setMetrics(prev => ({ ...prev, treks: prev.treks + 1 }));
+      setHistoryList(current => [
+         {
+           id: current.length > 0 ? Math.max(...current.map(h => h.id)) + 1 : 1,
+           title: 'Live Trek Session',
+           location: 'Syncing Location...',
+           date: 'Just started',
+           distance: '0.0 km',
+           pace: '-- /km',
+           time: '0m',
+           avgHr: '-- bpm',
+           mapImage: 'https://images.unsplash.com/photo-1473445730015-841f29a949ce?q=80&w=600&auto=format&fit=crop',
+           chartData: Array.from({length: 5}, (_, i) => ({ time: i, hr: 80 })),
+           alerts: 0
+         },
+         ...current
+      ]);
+    }
+  });
+
   return (
     <div className="min-h-screen bg-stone-100 font-opensans pb-20">
       <header className="bg-[#2E4F2F] text-white px-4 py-4 flex items-center justify-center shadow-md sticky top-0 z-50">
@@ -45,20 +86,20 @@ export function History() {
       <main className="p-4 max-w-2xl mx-auto space-y-6">
         <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-4 flex gap-4">
           <div className="flex-1 text-center border-r border-stone-100">
-            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F]">42</div>
+            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F]">{metrics.treks}</div>
             <div className="text-xs uppercase font-bold text-stone-400">Total Treks</div>
           </div>
           <div className="flex-1 text-center border-r border-stone-100">
-            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F]">312</div>
+            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F]">{metrics.distance}</div>
             <div className="text-xs uppercase font-bold text-stone-400">Distance (km)</div>
           </div>
           <div className="flex-1 text-center">
-            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F]">4</div>
+            <div className="text-2xl font-bold font-montserrat text-[#2E4F2F] transition-all duration-300">{metrics.alerts}</div>
             <div className="text-xs uppercase font-bold text-stone-400">Alerts Logs</div>
           </div>
         </div>
 
-        {mockHistory.map((activity) => (
+        {historyList.map((activity) => (
           <Card key={activity.id} className="overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow">
             <div className="p-4 flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-stone-200 overflow-hidden shrink-0 border-2 border-stone-100 mt-1">
